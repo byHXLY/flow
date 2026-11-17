@@ -1,0 +1,49 @@
+"use client";
+import { useState } from "react";
+import { ExternalLink, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { AsyncButton, ErrorNotice, LoadingRows, PageHeading, SelectField } from "@/components/workspace-ui";
+import { api, money, useResource } from "@/lib/client";
+import type { Provider, Settings, SettingsView } from "@/lib/contracts";
+
+const providerLinks: Record<Provider, string> = { mymemory: "https://mymemory.translated.net/doc/usagelimits.php", gemini: "https://aistudio.google.com/api-keys", deepl: "https://www.deepl.com/en/your-account/keys", openai_compatible: "" };
+function SettingsForm({ initial, refresh }: { initial: SettingsView; refresh: () => void }) {
+  const [form, setForm] = useState<Settings>({ provider: initial.provider, gemini_model: initial.gemini_model, mymemory_email: initial.mymemory_email,
+    daily_character_limit: initial.daily_character_limit, auto_translate: initial.auto_translate, translation_batch_size: initial.translation_batch_size, request_interval_ms: initial.request_interval_ms,
+    compatible_base_url: initial.compatible_base_url, compatible_model: initial.compatible_model, translate_titles_only: true });
+  const [key, setKey] = useState(""), [test, setTest] = useState("");
+  const save = async () => { await api("settings", { ...form, ...(key ? { api_key: key } : {}) }); setKey(""); refresh(); toast.success("Настройки сохранены"); };
+  return <Card className="max-w-2xl"><CardHeader><CardTitle>Переводчик</CardTitle></CardHeader><CardContent className="grid gap-5">
+    <div className="grid gap-2"><Label>Сервис</Label><SelectField className="w-full" label="Переводчик" value={form.provider} onChange={value => { setForm({ ...form, provider: value as Provider }); setKey(""); setTest(""); }} options={[{ value: "openai_compatible", label: "Qwen · OpenAI API" }, { value: "mymemory", label: "MyMemory · без ключа" }, { value: "gemini", label: "Gemini · ИИ" }, { value: "deepl", label: "DeepL" }]} /></div>
+    <div className="flex items-center justify-between text-xs text-muted-foreground"><span>{form.provider === "mymemory" ? "5 000 символов/день; с email — 50 000" : form.provider === "openai_compatible" ? "Пакетный перевод названий" : form.provider === "gemini" ? "Лимит зависит от модели и аккаунта" : "Квота вашего API-тарифа"}</span>{providerLinks[form.provider] && <Button variant="link" size="sm" nativeButton={false} render={<a href={providerLinks[form.provider]} target="_blank" rel="noreferrer" />}>{form.provider === "mymemory" ? "Лимиты" : "Ключ API"}<ExternalLink /></Button>}</div>
+    {form.provider !== "mymemory" && <div className="grid gap-2"><Label htmlFor="translation-key">Ключ API{initial.keys[form.provider] && <Badge variant="secondary">Сохранён</Badge>}</Label><Input id="translation-key" type="password" autoComplete="new-password" value={key} placeholder={initial.keys[form.provider] ? "Оставить текущий" : "Введите ключ"} onChange={e => setKey(e.target.value)} />{initial.keys[form.provider] && <AsyncButton className="justify-self-start" variant="ghost" size="sm" action={async () => { await api("settings", { ...form, clear_key: true }); refresh(); }}>Удалить ключ</AsyncButton>}</div>}
+    {form.provider === "gemini" && <div className="grid gap-2"><Label htmlFor="translation-model">Модель</Label><Input id="translation-model" value={form.gemini_model} onChange={e => setForm({ ...form, gemini_model: e.target.value })} /></div>}
+    {form.provider === "openai_compatible" && <><div className="grid gap-2"><Label htmlFor="compatible-base-url">API URL</Label><Input id="compatible-base-url" type="url" value={form.compatible_base_url} onChange={e => setForm({ ...form, compatible_base_url: e.target.value })} /></div><div className="grid gap-2"><Label htmlFor="compatible-model">Модель</Label><Input id="compatible-model" value={form.compatible_model} onChange={e => setForm({ ...form, compatible_model: e.target.value })} /></div><div className="text-sm text-muted-foreground">Переводятся только названия товаров</div></>}
+    {form.provider === "mymemory" && <div className="grid gap-2"><Label htmlFor="translation-email">Email для MyMemory</Label><Input id="translation-email" type="email" value={form.mymemory_email} onChange={e => setForm({ ...form, mymemory_email: e.target.value })} /></div>}
+    <div className="grid gap-4 sm:grid-cols-2"><div className="grid gap-2"><Label htmlFor="translation-limit">Лимит символов в день</Label><Input id="translation-limit" type="number" min={100} value={form.daily_character_limit} onChange={e => setForm({ ...form, daily_character_limit: Number(e.target.value) })} /></div><div className="grid gap-2"><Label htmlFor="translation-batch">Товаров за проход</Label><Input id="translation-batch" type="number" min={1} max={100} value={form.translation_batch_size} onChange={e => setForm({ ...form, translation_batch_size: Number(e.target.value) })} /></div></div>
+    <div className="grid gap-2"><Label htmlFor="request-interval">Пауза между запросами, мс</Label><Input id="request-interval" type="number" min={1000} value={form.request_interval_ms} onChange={e => setForm({ ...form, request_interval_ms: Number(e.target.value) })} /></div>
+    <div className="flex items-center justify-between gap-4"><Label htmlFor="auto-translate">Переводить после сбора</Label><Switch id="auto-translate" checked={form.auto_translate} onCheckedChange={value => setForm({ ...form, auto_translate: value })} /></div>
+    {form.provider === initial.provider && <div className="text-sm text-muted-foreground">Сегодня: {initial.usage.toLocaleString("ru-RU")} символов</div>}
+    {test && <p className="rounded-lg border p-3 text-sm">{test}</p>}
+  </CardContent><CardFooter className="flex gap-2"><AsyncButton action={save}>Сохранить</AsyncButton><AsyncButton variant="outline" action={async () => { await save(); const result = await api<{ title: string }>("settings/test", {}); setTest(result.title); refresh(); }}>Проверить</AsyncButton></CardFooter></Card>;
+}
+export default function SettingsPage() {
+  const { data, error, refresh } = useResource<SettingsView>("settings", 0);
+  const [term, setTerm] = useState(""), [translation, setTranslation] = useState("");
+  return <><PageHeading title="Настройки" /><ErrorNotice message={error} />{!data ? <LoadingRows /> : <Tabs defaultValue="translation"><TabsList><TabsTrigger value="translation">Перевод</TabsTrigger><TabsTrigger value="currency">Валюта</TabsTrigger><TabsTrigger value="glossary">Словарь</TabsTrigger></TabsList>
+    <TabsContent value="translation" className="pt-4"><SettingsForm initial={data} refresh={refresh} /></TabsContent>
+    <TabsContent value="currency" className="pt-4"><Card className="max-w-2xl"><CardHeader className="flex-row items-center justify-between"><CardTitle>Курс ЦБ</CardTitle><AsyncButton variant="outline" action={async () => { await api("settings/refresh-fx", {}); toast.success("Обновление курса запущено"); setTimeout(refresh, 3000); }}><RefreshCw />Обновить</AsyncButton></CardHeader><CardContent>{data.fx ? <><div className="mb-4 text-sm text-muted-foreground">{new Date(`${data.fx.date}T12:00:00Z`).toLocaleDateString("ru-RU")}</div><Table><TableHeader><TableRow><TableHead>Валюта</TableHead><TableHead className="text-right">Рубли за 1 единицу</TableHead></TableRow></TableHeader><TableBody>{["CNY", "USD", "EUR"].filter(c => data.fx?.rates[c]).map(currency => <TableRow key={currency}><TableCell>{currency}</TableCell><TableCell className="text-right tabular-nums">{money(data.fx!.rates[currency])}</TableCell></TableRow>)}</TableBody></Table></> : <p className="text-sm text-muted-foreground">Курс ещё не загружен</p>}</CardContent></Card></TabsContent>
+    <TabsContent value="glossary" className="space-y-4 pt-4"><div className="flex flex-wrap gap-2"><Input aria-label="Китайский термин" placeholder="Китайский термин" value={term} onChange={e => setTerm(e.target.value)} className="min-w-48 flex-1" /><Input aria-label="Русский перевод" placeholder="Русский перевод" value={translation} onChange={e => setTranslation(e.target.value)} className="min-w-64 flex-1" /><AsyncButton disabled={!term.trim() || !translation.trim()} action={async () => { await api("glossary", { source: term, target: translation }); setTerm(""); setTranslation(""); refresh(); }}><Plus />Сохранить</AsyncButton></div>
+      <div className="rounded-lg border"><Table><TableHeader><TableRow><TableHead>Термин</TableHead><TableHead>Перевод</TableHead><TableHead><span className="sr-only">Удалить</span></TableHead></TableRow></TableHeader><TableBody>{data.glossary.map(row => <TableRow key={row.source}><TableCell><Button variant="link" className="h-auto p-0" onClick={() => { setTerm(row.source); setTranslation(row.target); }}>{row.source}</Button></TableCell><TableCell className="whitespace-normal">{row.target}</TableCell><TableCell className="text-right"><AsyncButton variant="ghost" size="icon-sm" aria-label={`Удалить ${row.source}`} action={async () => { await api(`glossary/${encodeURIComponent(row.source)}`, {}, "DELETE"); refresh(); }}><Trash2 /></AsyncButton></TableCell></TableRow>)}</TableBody></Table></div>
+      <AsyncButton variant="outline" action={async () => { await api("translations/reset", {}); toast.success("Перевод обновляется"); }}>Перевести заново</AsyncButton>
+    </TabsContent>
+  </Tabs>}</>;
+}
